@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const WEEKDAY_LABELS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 const MONTH_LABELS = [
@@ -39,6 +39,13 @@ export function MonthCalendar({ value, onChange, minDate, markedDates, onMonthCh
   const selected = parseIsoDate(value);
   const [viewYear, setViewYear] = useState(selected.year);
   const [viewMonth, setViewMonth] = useState(selected.month);
+
+  // keep the displayed month in sync when `value` changes from outside (e.g. a restored selection)
+  useEffect(() => {
+    setViewYear(selected.year);
+    setViewMonth(selected.month);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   const todayIso = toIsoDate(
     new Date().getFullYear(),

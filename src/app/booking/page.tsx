@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ROOM_LABELS } from "@/lib/rooms";
 import { buildTimeOptions, combineDateAndTime, todayIsoDate, DURATION_OPTIONS } from "@/lib/slots";
@@ -12,6 +12,14 @@ type BusyInterval = { startTime: string; endTime: string; room: { key: RoomKey; 
 
 const ROOM_KEYS: RoomKey[] = ["ROOM1", "ROOM2", "WORKSHOP", "ROOM1_2"];
 const TIME_OPTIONS = buildTimeOptions();
+const LAST_SELECTION_KEY = "booking:lastSelection";
+
+type StoredSelection = {
+  date: string;
+  roomKey: RoomKey;
+  startTime: string;
+  durationMinutes: number;
+};
 
 export default function BookingPage() {
   const router = useRouter();
@@ -26,6 +34,35 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // restore the last date/room/time the user had selected, instead of always resetting to today
+  useEffect(() => {
+    const raw = window.localStorage.getItem(LAST_SELECTION_KEY);
+    if (!raw) return;
+    try {
+      const stored = JSON.parse(raw) as Partial<StoredSelection>;
+      if (stored.date && stored.date >= todayIsoDate()) setDate(stored.date);
+      if (stored.roomKey && ROOM_KEYS.includes(stored.roomKey)) setRoomKey(stored.roomKey);
+      if (stored.startTime && TIME_OPTIONS.includes(stored.startTime)) setStartTime(stored.startTime);
+      if (stored.durationMinutes) setDurationMinutes(stored.durationMinutes);
+    } catch {
+      // ignore corrupt storage
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // skip the very first commit: at that point state still holds the pre-restore defaults
+  // (the restore effect's setState calls above haven't flushed into this closure yet), so
+  // persisting here would immediately overwrite the stored selection with those defaults.
+  const hasMountedRef = useRef(false);
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    const selection: StoredSelection = { date, roomKey, startTime, durationMinutes };
+    window.localStorage.setItem(LAST_SELECTION_KEY, JSON.stringify(selection));
+  }, [date, roomKey, startTime, durationMinutes]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for a client-side fetch triggered by date/room changes
