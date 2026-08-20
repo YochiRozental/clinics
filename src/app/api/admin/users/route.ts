@@ -15,6 +15,7 @@ export async function GET(request: Request) {
           OR: [
             { email: { contains: search, mode: "insensitive" } },
             { name: { contains: search, mode: "insensitive" } },
+            { phone: { contains: search, mode: "insensitive" } },
           ],
         }
       : undefined,

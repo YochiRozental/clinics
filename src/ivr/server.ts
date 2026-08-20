@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { YemotRouter } from "yemot-router2";
-import { handleBookingCall } from "@/ivr/booking-flow";
+import { handleCheckCall, handleMembersCall, handleNotRegisteredCall } from "@/ivr/booking-flow";
 
 const app = express();
 
@@ -31,9 +31,13 @@ if (!secret) {
     "IVR_SHARED_SECRET לא מוגדר ב-.env. יש להגדיר מחרוזת סודית אקראית כדי שרק ימות המשיח יוכל לקרוא לנתיב הזה."
   );
 }
-const bookingPath = `/booking-${secret}`;
+const checkPath = `/check-${secret}`;
+const membersPath = `/booking-${secret}`;
+const notRegisteredPath = `/not-registered-${secret}`;
 
-router.get(bookingPath, handleBookingCall);
+router.get(checkPath, handleCheckCall);
+router.get(membersPath, handleMembersCall);
+router.get(notRegisteredPath, handleNotRegisteredCall);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(router.asExpressRouter);
@@ -41,5 +45,8 @@ app.use(router.asExpressRouter);
 const port = Number(process.env.IVR_PORT) || 3001;
 app.listen(port, () => {
   console.log(`[ivr] Yemot IVR server listening on port ${port}`);
-  console.log(`[ivr] api_link לשלוחה: http://<your-domain>:${port}${bookingPath}`);
+  console.log(`[ivr] שלוחת הבדיקה (הכניסה לשיחה) -> http://<your-domain>:${port}${checkPath}`);
+  console.log(`[ivr] שלוחה 1, "מחוברים" -> http://<your-domain>:${port}${membersPath}`);
+  console.log(`[ivr] שלוחה 2, "לא רשום" -> http://<your-domain>:${port}${notRegisteredPath}`);
+  console.log(`[ivr] שלוחה 3, "הסבר על המערכת" -> קיימת כבר בפאנל, אין צורך ב-URL`);
 });

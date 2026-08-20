@@ -13,10 +13,10 @@ type Appointment = {
   notes: string | null;
   source: "WEB" | "IVR" | "ADMIN";
   room: { key: RoomKey; name: string };
-  user: { id: string; name: string; email: string; phone: string | null };
+  user: { id: string; name: string; email: string | null; phone: string | null };
 };
 
-type UserOption = { id: string; name: string; email: string };
+type UserOption = { id: string; name: string; email: string | null; phone: string | null };
 
 const ROOM_KEYS: RoomKey[] = ["ROOM1", "ROOM2", "WORKSHOP", "ROOM1_2"];
 const TIME_OPTIONS = buildTimeOptions();
@@ -146,14 +146,14 @@ export default function AdminAppointmentsPage() {
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white border border-slate-200 rounded-xl p-4 space-y-4 shadow-sm">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">חיפוש לקוח (שם או אימייל)</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">חיפוש לקוח (שם, אימייל או טלפון)</label>
             <input
               value={userSearch}
               onChange={(e) => {
                 setUserSearch(e.target.value);
                 setSelectedUserId("");
               }}
-              placeholder="לדוגמה: israel@example.com"
+              placeholder="לדוגמה: israel@example.com או 0501234567"
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
             />
             {userOptions.length > 0 && !selectedUserId && (
@@ -163,12 +163,12 @@ export default function AdminAppointmentsPage() {
                     key={u.id}
                     onClick={() => {
                       setSelectedUserId(u.id);
-                      setUserSearch(`${u.name} (${u.email})`);
+                      setUserSearch(`${u.name} (${u.email ?? u.phone ?? "טלפון"})`);
                       setUserOptions([]);
                     }}
                     className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer"
                   >
-                    {u.name} · {u.email}
+                    {u.name} · {u.email ?? u.phone ?? "—"}
                   </li>
                 ))}
               </ul>
@@ -281,7 +281,7 @@ export default function AdminAppointmentsPage() {
                     <td className="px-4 py-2">{ROOM_LABELS[a.room.key]}</td>
                     <td className="px-4 py-2">
                       {a.user.name}
-                      <div className="text-xs text-slate-400">{a.user.email}</div>
+                      <div className="text-xs text-slate-400">{a.user.email ?? "—"}</div>
                     </td>
                     <td className="px-4 py-2">{a.user.phone ?? "—"}</td>
                     <td className="px-4 py-2 text-xs">

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAppointment, BookingError } from "@/lib/booking";
 import { ROOM_LABELS } from "@/lib/rooms";
 import { DURATION_OPTIONS } from "@/lib/slots";
+import { hashPassword } from "@/lib/password";
 import { last9Digits } from "@/ivr/phone";
 import { ROOM_DIGIT_MAP, ROOM_MENU_PROMPT, DURATION_DIGIT_MAP, DURATION_MENU_PROMPT } from "@/ivr/ivr-options";
 
@@ -65,19 +66,70 @@ function resolveTargetDate(day: number, month: number): Date {
   return candidate;
 }
 
-export async function handleBookingCall(call: Call) {
-  const phone = last9Digits(call.phone);
-  const user = phone ? await prisma.user.findFirst({ where: { phone: { endsWith: phone } } }) : null;
+function parsePin(raw: string): string | null {
+  return /^\d{4}$/.test(raw) ? raw : null;
+}
 
-  if (!user) {
-    return call.id_list_message([
-      text(
-        "מספר הטלפון שלך אינו רשום במערכת. יש להירשם באתר ולעדכן מספר טלפון, ולאחר מכן ניתן יהיה לקבוע תור דרך הטלפון. תודה ולהתראות"
-      ),
-    ]);
+/**
+ * שלוחות יעד ל-go_to_folder, לפי מבנה השלוחות שהוגדר בפאנל ימות המשיח.
+ * נתיבים מוחלטים (מתחילים ב-/) כדי שהניווט יעבוד מכל עומק בעץ השלוחות.
+ */
+const MEMBERS_EXTENSION = "/1";
+const NOT_REGISTERED_EXTENSION = "/2";
+const EXPLANATION_EXTENSION = "/3";
+
+/** מבקש מהמתקשר שם מלא באמצעות זיהוי דיבור, עם ניסיונות חוזרים */
+async function readSpokenName(call: Call): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const prompt =
+      attempt === 0 ? "אמרו בבקשה את שמכם המלא, אחרי הצפצוף" : "לא הצלחנו לזהות שם, אנא אמרו שוב את שמכם המלא";
+    const raw = await call.read([text(prompt)], "stt");
+    const name = raw?.trim();
+    if (name && name.length >= 2 && !/^\d+$/.test(name)) return name;
   }
+  call.id_list_message([text("לא זוהה שם תקין. השיחה תנותק, ניתן לנסות שוב.")]);
+  throw new Error("unreachable");
+}
 
-  const roomDigit = await call.read([text(`שלום ${user.name}. ${ROOM_MENU_PROMPT}`)], "tap", {
+/** מבקש קוד סודי בן 4 ספרות פעמיים ומוודא שהם תואמים, עם ניסיונות חוזרים */
+async function readNewPin(call: Call): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const pin = await readValidated(
+      call,
+      "בחרו קוד סודי אישי בן 4 ספרות לזיהוי עתידי, והקישו אותו",
+      parsePin,
+      "הקוד שהוקש אינו תקין, יש להקיש 4 ספרות",
+      4
+    );
+    const confirmPin = await readValidated(
+      call,
+      "לאישור, הקישו שוב את אותו קוד סודי",
+      parsePin,
+      "הקוד שהוקש אינו תקין, יש להקיש 4 ספרות",
+      4
+    );
+    if (pin === confirmPin) return pin;
+  }
+  call.id_list_message([text("הקוד שהוקש לא תאם בין שתי ההקשות. השיחה תנותק, ניתן לנסות שוב.")]);
+  throw new Error("unreachable");
+}
+
+/** קולט שם + קוד סודי ויוצר משתמש חדש. מניח שהמתקשר כבר ביקש להירשם (הכוונה נעשית לפני הקריאה לכאן) */
+async function performRegistration(call: Call, phone: string) {
+  const name = await readSpokenName(call);
+  const pin = await readNewPin(call);
+  const passwordHash = await hashPassword(pin);
+
+  try {
+    return await prisma.user.create({ data: { name, phone, passwordHash } });
+  } catch {
+    call.id_list_message([text("אירעה שגיאה בהרשמה, נסו שוב מאוחר יותר")]);
+    return null;
+  }
+}
+
+async function runBookingDialog(call: Call, user: { id: string; name: string }, greeting: string) {
+  const roomDigit = await call.read([text(`${greeting}${ROOM_MENU_PROMPT}`)], "tap", {
     max_digits: 1,
     min_digits: 1,
     digits_allowed: [1, 2, 3, 4],
@@ -165,4 +217,46 @@ export async function handleBookingCall(call: Call) {
     const message = err instanceof BookingError ? err.message : "אירעה שגיאה בקביעת התור, נסו שוב מאוחר יותר";
     return call.id_list_message([text(message)]);
   }
+}
+
+async function findUserByCallerPhone(call: Call) {
+  const phone = last9Digits(call.phone);
+  return phone ? prisma.user.findFirst({ where: { phone: { endsWith: phone } } }) : null;
+}
+
+/** שלוחת הבדיקה — הכניסה הראשונית לשיחה. בודקת אם המספר רשום ומנתבת לשלוחת המחוברים (1) או ללא-רשומים (2) */
+export async function handleCheckCall(call: Call) {
+  const user = await findUserByCallerPhone(call);
+  return call.go_to_folder(user ? MEMBERS_EXTENSION : NOT_REGISTERED_EXTENSION);
+}
+
+/** שלוחה 1 — "מחוברים": מניחה שהמתקשר רשום (הגיע דרך שלוחת הבדיקה), ומריצה את שיחת קביעת התור */
+export async function handleMembersCall(call: Call) {
+  const user = await findUserByCallerPhone(call);
+  if (!user) {
+    // הגעה ישירה לשלוחה זו בלי לעבור דרך שלוחת הבדיקה (מקרה קצה) — מנתבים חזרה למסלול הנכון
+    return call.go_to_folder(NOT_REGISTERED_EXTENSION);
+  }
+  return runBookingDialog(call, user, `שלום ${user.name}. `);
+}
+
+/** שלוחה 2 — מספר לא רשום: הרשמה / הסבר על המערכת (שלוחה 3) / ניתוק */
+export async function handleNotRegisteredCall(call: Call) {
+  const choice = await call.read(
+    [
+      text(
+        "מספר הטלפון שלך אינו רשום במערכת. להרשמה הקישו 1. לשמיעת הסבר על המערכת הקישו 2. לניתוק הקישו 3"
+      ),
+    ],
+    "tap",
+    { max_digits: 1, min_digits: 1, digits_allowed: [1, 2, 3], sec_wait: 10 }
+  );
+
+  if (choice === "2") return call.go_to_folder(EXPLANATION_EXTENSION);
+  if (choice !== "1") return call.hangup();
+
+  const newUser = await performRegistration(call, call.phone);
+  if (!newUser) return; // performRegistration כבר סיימה את השיחה עם הודעת שגיאה
+
+  return call.go_to_folder(MEMBERS_EXTENSION);
 }

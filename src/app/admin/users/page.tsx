@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 type UserRow = {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   role: "CLIENT" | "ADMIN";
   createdAt: string;
@@ -72,7 +72,7 @@ export default function AdminUsersPage() {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td className="px-4 py-2">{u.name}</td>
-                  <td className="px-4 py-2 text-slate-500">{u.email}</td>
+                  <td className="px-4 py-2 text-slate-500">{u.email ?? "נרשם/ה דרך הטלפון"}</td>
                   <td className="px-4 py-2 text-slate-500">{u.phone ?? "—"}</td>
                   <td className="px-4 py-2">{u._count.appointments}</td>
                   <td className="px-4 py-2">
