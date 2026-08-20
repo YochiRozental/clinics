@@ -1,0 +1,70 @@
+import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/require-admin";
+import { prisma } from "@/lib/prisma";
+import { createAppointment, BookingError } from "@/lib/booking";
+import type { RoomKey } from "@/generated/prisma/client";
+
+export async function GET(request: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+
+  const { searchParams } = new URL(request.url);
+  const date = searchParams.get("date");
+  const roomKey = searchParams.get("roomKey") as RoomKey | null;
+
+  const where: {
+    startTime?: { lte: Date };
+    endTime?: { gte: Date };
+    room?: { key: RoomKey };
+  } = {};
+
+  if (date) {
+    where.startTime = { lte: new Date(`${date}T23:59:59`) };
+    where.endTime = { gte: new Date(`${date}T00:00:00`) };
+  }
+  if (roomKey) {
+    where.room = { key: roomKey };
+  }
+
+  const appointments = await prisma.appointment.findMany({
+    where,
+    include: { room: true, user: { select: { id: true, name: true, email: true, phone: true } } },
+    orderBy: { startTime: "asc" },
+  });
+
+  return NextResponse.json(appointments);
+}
+
+export async function POST(request: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+
+  const body = await request.json().catch(() => null);
+  const userId = body?.userId as string | undefined;
+  const roomKey = body?.roomKey as RoomKey | undefined;
+  const startTime = body?.startTime as string | undefined;
+  const endTime = body?.endTime as string | undefined;
+  const notes = body?.notes as string | undefined;
+
+  if (!userId || !roomKey || !startTime || !endTime) {
+    return NextResponse.json({ error: "חסרים פרטים לקביעת התור" }, { status: 400 });
+  }
+
+  try {
+    const appointment = await createAppointment({
+      userId,
+      roomKey,
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      notes,
+      source: "ADMIN",
+    });
+    return NextResponse.json(appointment, { status: 201 });
+  } catch (err) {
+    if (err instanceof BookingError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    console.error(err);
+    return NextResponse.json({ error: "שגיאה בקביעת התור" }, { status: 500 });
+  }
+}

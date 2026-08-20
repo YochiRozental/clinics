@@ -1,36 +1,117 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# מערכת ניהול קליניקות — קביעת תורים
 
-## Getting Started
+מערכת לניהול תורים לחדרי קליניקה: חדר 1, חדר 2, חדר סדנאות, וחדר 1+2 (משולב).
+הזמנת חדר 1+2 חוסמת אוטומטית גם את חדר 1 וגם את חדר 2 באותו טווח זמן, ולהפך — כדי למנוע התנגשות פיזית. חדר הסדנאות עצמאי לחלוטין.
 
-First, run the development server:
+## סטאק טכנולוגי
+
+- **Next.js 16** (App Router) + TypeScript + Tailwind CSS
+- **PostgreSQL** + **Prisma ORM**
+- **Auth.js (NextAuth v5)** — התחברות/הרשמה עם אימייל וסיסמה
+- **Express + yemot-router2** — שרת IVR נפרד לקביעת תורים בטלפון דרך ימות המשיח (`src/ivr/`)
+
+## הערות סביבה
+
+- ה-Postgres בקונטיינר מפורסם על פורט **5433** (לא 5432), כדי לא להתנגש עם התקנת Postgres מקומית שכבר קיימת על המחשב. אם תרצו לשנות זאת, עדכנו גם את `docker-compose.yml` וגם את `DATABASE_URL` ב-`.env`.
+- `npm run dev` מריץ את השרת עם `--webpack` (ולא עם Turbopack, שהוא ברירת המחדל של Next 16) כדי לעקוף בעיית טעינת גופנים מ-Google Fonts בסביבת הפיתוח הנוכחית.
+
+## הרצה מקומית
+
+1. הפעילו את בסיס הנתונים (Postgres) עם Docker:
+
+   ```bash
+   docker compose up -d
+   ```
+
+2. התקינו תלויות (אם עדיין לא הותקנו):
+
+   ```bash
+   npm install
+   ```
+
+3. הריצו מיגרציה ליצירת הטבלאות + הזרעת נתונים ראשוניים (חדרים + משתמש מנהל):
+
+   ```bash
+   npm run db:migrate
+   npm run db:seed
+   ```
+
+   פרטי התחברות ברירת מחדל למנהל: `admin@clinics.local` / `Admin12345!`
+   **חשוב להחליף סיסמה זו בסביבת ייצור.**
+
+4. הריצו את השרת:
+
+   ```bash
+   npm run dev
+   ```
+
+   האתר יהיה זמין בכתובת http://localhost:3000
+
+## מבנה המערכת
+
+- `/` — עמוד הבית
+- `/register`, `/login` — הרשמה/התחברות (חובה כדי לקבוע תור)
+- `/booking` — קביעת תור: בחירת חדר בלחיצה, בחירת תאריך בלוח שנה חודשי, ובחירת שעה מרשת שעות שמציגה ויזואלית אילו שעות תפוסות/פנויות/עברו
+- `/booking/my` — התורים שלי (כולל ביטול)
+- `/admin` — לוח בקרה למנהל (רק למשתמשי ADMIN)
+- `/admin/calendar` — לוח שנה למנהל: לוח חודשי לבחירת יום (עם נקודה לימים שיש בהם תורים) + תצוגת יום עם עמודה לכל חדר וכל התורים ממוקמים לפי שעה, כולל ביטול בלחיצה
+- `/admin/appointments` — טבלת כל התורים עם סינון + קביעת תור ידנית עבור לקוח קיים
+- `/admin/rooms` — הפעלה/השבתה של חדרים
+- `/admin/users` — ניהול משתמשים והרשאות
+
+מניעת ההתנגשויות מתבצעת בשכבת השרת בתוך טרנזקציה (`src/lib/booking.ts`), כך שגם בקשות מקבילות לא יכולות ליצור התנגשות בין תורים.
+
+## אינטגרציה עם ימות המשיח (IVR טלפוני)
+
+יש שרת נפרד וקטן (`src/ivr/server.ts`) שמאפשר קביעת תור דרך שיחת טלפון, באמצעות מודול ה-API של ימות המשיח וספריית [yemot-router2](https://github.com/ShlomoCode/yemot-router2). הוא משתמש באותה פונקציית ליבה בדיוק כמו האתר (`createAppointment` ב-`src/lib/booking.ts`), כך שכל כללי מניעת ההתנגשויות, שעות הפעילות ומשכי התור זהים לחלוטין בין האתר לטלפון.
+
+**חשוב:** בניגוד לאתר עצמו, שרת ה-IVR **חייב לרוץ כתהליך Node קבוע** (VPS/שרת עם Docker וכדומה) ולא כפונקציות serverless — כי הספרייה שומרת את מצב השיחה (איפה המתקשר נמצא בתהליך) בזיכרון השרת בין בקשה לבקשה, עד לתשובה הבאה מהמתקשר.
+
+### איך זה עובד
+
+1. המתקשר מתקשר למספר של ימות המשיח.
+2. ימות מזהה את מספר הטלפון של המתקשר (Caller ID) ומחפש אותו במערכת שלנו לפי שדה `phone` של המשתמש. אם המספר לא רשום, המתקשר מקבל הודעה שיש להירשם באתר קודם, ותו לא — בהתאם לדרישה שרישום/התחברות מקדימים לקביעת תור.
+3. אם המשתמש נמצא, מתנהלת שיחה קצרה עם הקשות (לא צריך להקליד כלום, רק להקיש מספרים): בחירת חדר → תאריך → שעה → משך → אישור.
+4. בסיום, נקרא `createAppointment(..., source: "IVR")` — בדיוק כמו קביעת תור מהאתר, כולל בדיקת התנגשויות. בטבלת `Appointment` השדה `source` (`WEB`/`IVR`/`ADMIN`) מציין תמיד מאיפה הגיע כל תור.
+
+### הרצת שרת ה-IVR
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run ivr        # הרצה רגילה
+npm run ivr:dev     # הרצה עם ריסטארט אוטומטי בשינויי קוד, לפיתוח
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+השרת מאזין כברירת מחדל על פורט 3001 (`IVR_PORT` ב-`.env`). בעליה הוא מדפיס ללוג את כתובת ה-API המלאה שצריך להזין בפאנל של ימות המשיח, למשל:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+http://<your-domain>:3001/booking-e6dab0a438663ff3cf4490e775419a55
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+הסיומת האקראית (`IVR_SHARED_SECRET` ב-`.env`) היא אמצעי אבטחה — כדי שרק מי שמכיר את הכתובת המלאה (כלומר, ימות המשיח שהוגדר עם ה-URL הזה) יוכל לגשת לנתיב. **אל תשתפו את הכתובת הזו בשום מקום ציבורי, ואם היא דלפה — שנו את `IVR_SHARED_SECRET` והפעילו מחדש.**
 
-## Learn More
+בייצור צריך שהכתובת תהיה נגישה מהאינטרנט (ימות המשיח קורא ל-URL הזה מהשרתים שלהם), כלומר יידרש דומיין/פורט פתוח, ומומלץ מאוד HTTPS מול שרת proxy (nginx/caddy) מול פורט 3001 במקום לחשוף אותו ישירות.
 
-To learn more about Next.js, take a look at the following resources:
+### אילו שלוחות להגדיר בפאנל הניהול של ימות המשיח
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**שלוחה אחת מספיקה** — כל שיחת ההזמנה (בחירת חדר/תאריך/שעה/משך/אישור) מתנהלת בקוד שלנו באמצעות פקודות `read` חוזרות, ולא דורשת יצירת שלוחה נפרדת לכל שלב:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. היכנסו לפאנל הניהול של ימות המשיח, לשלוחה שברצונכם להקדיש לקביעת תורים (יכולה להיות השלוחה הראשית של הקו, אם הקו כולו מיועד לקביעת תורים, או שלוחה ספציפית כמו שלוחה 1 אם יש לכם תפריט כללי עם כמה שירותים).
+2. הגדירו את סוג השלוחה (`type`) בתור **"מערכת API"** (`type=api`).
+3. בשדה כתובת ה-API (`api_link`) הזינו את הכתובת המלאה שהשרת הדפיס בהרצה, כולל הסיומת הסודית.
+4. השאירו את שיטת השליחה כברירת המחדל (GET) — אין צורך ב-`api_url_post=yes`.
 
-## Deploy on Vercel
+אם תרצו תפריט כללי יותר (למשל "לקביעת תור הקישו 1, לשירות אחר הקישו 2") — יש להוסיף **שלוחה נוספת** אחת ברמה גבוהה יותר מסוג תפריט רגיל, שמפנה (`go_to_folder`) לשלוחת ה-API שהגדרתם. אין צורך ביותר משתי שלוחות בשום מקרה.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### בדיקה לפני חיבור לקו אמיתי
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+אפשר לדמות שיחה נכנסת מימות המשיח עם `curl`, בלי לחכות לקו טלפון אמיתי. כל בקשה חייבת לכלול `ApiPhone`, `ApiDID`, `ApiExtension` ו-`ApiCallId` זהה לאורך כל השיחה המדומה:
+
+```bash
+curl -G "http://localhost:3001/booking-<הסיומת-הסודית>" \
+  --data-urlencode "ApiPhone=0501234567" \
+  --data-urlencode "ApiCallId=test-1" \
+  --data-urlencode "ApiExtension=1" \
+  --data-urlencode "ApiDID=0771234567"
+```
+
+התשובה תהיה שורת טקסט כמו `read=t-...=val_1,...` — זו השאלה הבאה שהמערכת "משמיעה". כדי "להקיש" תשובה, שולחים בקשה נוספת עם אותם פרמטרים + `val_1=<הבחירה>`, וכך הלאה עם `val_2`, `val_3` וכו', בהתאם למספר השאלות שכבר נענו.
