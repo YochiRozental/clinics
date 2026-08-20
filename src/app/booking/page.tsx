@@ -137,7 +137,6 @@ export default function BookingPage() {
                 selected={startTime}
                 onSelect={setStartTime}
                 busy={busy}
-                durationMinutes={durationMinutes}
               />
             </div>
 

@@ -10,20 +10,18 @@ type TimeSlotGridProps = {
   selected: string;
   onSelect: (time: string) => void;
   busy: BusyInterval[];
-  durationMinutes: number;
 };
 
-export function TimeSlotGrid({ date, timeOptions, selected, onSelect, busy, durationMinutes }: TimeSlotGridProps) {
+export function TimeSlotGrid({ date, timeOptions, selected, onSelect, busy }: TimeSlotGridProps) {
   // eslint-disable-next-line react-hooks/purity -- used only to grey out past time slots, staleness is harmless
   const now = Date.now();
 
   function isOverlapping(time: string) {
     const start = combineDateAndTime(date, time);
-    const end = new Date(start.getTime() + durationMinutes * 60000);
     return busy.some((b) => {
       const bStart = new Date(b.startTime);
       const bEnd = new Date(b.endTime);
-      return start < bEnd && end > bStart;
+      return start >= bStart && start < bEnd;
     });
   }
 
