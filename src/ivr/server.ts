@@ -12,6 +12,8 @@ const router = YemotRouter({
   },
   uncaughtErrorHandler: (error, call) => {
     console.error(`[ivr] uncaught error for call ${call.callId} from ${call.phone}:`, error);
+    // נשאר טקסט (ולא קובץ מוקלט) בכוונה: זו נפילת חירום גלובלית שיכולה לקרות בכל שלוחה,
+    // ואין שלוחת-בית אחת שבה אפשר להקליט לה קובץ.
     return call.id_list_message([
       { type: "text", data: "אירעה שגיאה במערכת, אנא נסו שוב מאוחר יותר. תודה ולהתראות" },
     ]);

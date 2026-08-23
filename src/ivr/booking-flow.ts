@@ -1,12 +1,14 @@
 import type { Call, Msg } from "yemot-router2";
 import { prisma } from "@/lib/prisma";
 import { createAppointment, BookingError } from "@/lib/booking";
-import { ROOM_LABELS } from "@/lib/rooms";
-import { DURATION_OPTIONS } from "@/lib/slots";
 import { hashPassword } from "@/lib/password";
 import { last9Digits } from "@/ivr/phone";
-import { ROOM_DIGIT_MAP, ROOM_MENU_PROMPT, DURATION_DIGIT_MAP, DURATION_MENU_PROMPT } from "@/ivr/ivr-options";
+import { ROOM_DIGIT_MAP, DURATION_DIGIT_MAP } from "@/ivr/ivr-options";
+import { ROOM_LABELS } from "@/lib/rooms";
+import { DURATION_OPTIONS } from "@/lib/slots";
+import { bookingFile, notRegisteredFile, BOOKING_FILES, NOT_REGISTERED_FILES } from "@/ivr/prompts";
 
+/** להודעות שנשארות דינמיות בהכרח (שם חופשי שנאמר ע"י המתקשר, הודעת האישור עם התאריך/שעה, או הודעות שגיאה שמגיעות מלוגיקת עסקית משותפת עם האתר - src/lib/booking.ts) */
 function text(data: string): Msg {
   return { type: "text", data, removeInvalidChars: true };
 }
@@ -14,17 +16,19 @@ function text(data: string): Msg {
 /**
  * מבצע read עם ולידציה + ניסיונות חוזרים. אם המתקשר לא נותן קלט תקין אחרי maxAttempts,
  * הפונקציה מנתקת את השיחה בעצמה (id_list_message זורק שגיאת יציאה פנימית של הספרייה, וזו התנהגות מכוונת).
+ * prompt/invalidMessage/noInputMessage הן הודעות קובץ (ראו prompts.ts) - נמסרות מבחוץ כי כל שלוחה מחזיקה קבצים משלה.
  */
 async function readValidated<T>(
   call: Call,
-  prompt: string,
+  prompt: Msg,
   parse: (raw: string) => T | null,
-  invalidMessage: string,
+  invalidMessage: Msg,
   digits: number,
+  noInputMessage: Msg,
   maxAttempts = 3
 ): Promise<T> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const messages = attempt === 0 ? [text(prompt)] : [text(invalidMessage), text(prompt)];
+    const messages = attempt === 0 ? [prompt] : [invalidMessage, prompt];
     const raw = await call.read(messages, "tap", {
       max_digits: digits,
       min_digits: digits,
@@ -33,7 +37,7 @@ async function readValidated<T>(
     const parsed = parse(raw);
     if (parsed !== null) return parsed;
   }
-  call.id_list_message([text("לא התקבל קלט תקין. השיחה תנותק, ניתן לנסות שוב.")]);
+  call.id_list_message([noInputMessage]);
   throw new Error("unreachable");
 }
 
@@ -81,13 +85,14 @@ const EXPLANATION_EXTENSION = "/3";
 /** מבקש מהמתקשר שם מלא באמצעות זיהוי דיבור, עם ניסיונות חוזרים */
 async function readSpokenName(call: Call): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const prompt =
-      attempt === 0 ? "אמרו בבקשה את שמכם המלא, אחרי הצפצוף" : "לא הצלחנו לזהות שם, אנא אמרו שוב את שמכם המלא";
-    const raw = await call.read([text(prompt)], "stt");
+    const prompt = notRegisteredFile(
+      attempt === 0 ? NOT_REGISTERED_FILES.ASK_NAME : NOT_REGISTERED_FILES.ASK_NAME_RETRY
+    );
+    const raw = await call.read([prompt], "stt");
     const name = raw?.trim();
     if (name && name.length >= 2 && !/^\d+$/.test(name)) return name;
   }
-  call.id_list_message([text("לא זוהה שם תקין. השיחה תנותק, ניתן לנסות שוב.")]);
+  call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.NAME_FAILURE)]);
   throw new Error("unreachable");
 }
 
@@ -96,21 +101,23 @@ async function readNewPin(call: Call): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const pin = await readValidated(
       call,
-      "בחרו קוד סודי אישי בן 4 ספרות לזיהוי עתידי, והקישו אותו",
+      notRegisteredFile(NOT_REGISTERED_FILES.ASK_PIN),
       parsePin,
-      "הקוד שהוקש אינו תקין, יש להקיש 4 ספרות",
-      4
+      notRegisteredFile(NOT_REGISTERED_FILES.INVALID_PIN),
+      4,
+      notRegisteredFile(NOT_REGISTERED_FILES.NO_INPUT)
     );
     const confirmPin = await readValidated(
       call,
-      "לאישור, הקישו שוב את אותו קוד סודי",
+      notRegisteredFile(NOT_REGISTERED_FILES.CONFIRM_PIN),
       parsePin,
-      "הקוד שהוקש אינו תקין, יש להקיש 4 ספרות",
-      4
+      notRegisteredFile(NOT_REGISTERED_FILES.INVALID_PIN),
+      4,
+      notRegisteredFile(NOT_REGISTERED_FILES.NO_INPUT)
     );
     if (pin === confirmPin) return pin;
   }
-  call.id_list_message([text("הקוד שהוקש לא תאם בין שתי ההקשות. השיחה תנותק, ניתן לנסות שוב.")]);
+  call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.PIN_MISMATCH)]);
   throw new Error("unreachable");
 }
 
@@ -123,34 +130,36 @@ async function performRegistration(call: Call, phone: string) {
   try {
     return await prisma.user.create({ data: { name, phone, passwordHash } });
   } catch {
-    call.id_list_message([text("אירעה שגיאה בהרשמה, נסו שוב מאוחר יותר")]);
+    call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.REGISTRATION_ERROR)]);
     return null;
   }
 }
 
-async function runBookingDialog(call: Call, user: { id: string; name: string }, greeting: string) {
-  const roomDigit = await call.read([text(`${greeting}${ROOM_MENU_PROMPT}`)], "tap", {
+async function runBookingDialog(call: Call, user: { id: string; name: string }) {
+  // השם נקרא בהקראת TTS אחת רציפה עם "שלום" (ולא כקטע קול נפרד בין שני קבצים מוקלטים) - כך הוא נשמע טבעי ולא מובלע
+  const roomDigit = await call.read(
+    [text(`שלום ${user.name}`), bookingFile(BOOKING_FILES.ROOM_MENU)],
+    "tap",
+    { max_digits: 1, min_digits: 1, digits_allowed: [1, 2, 3, 4], sec_wait: 10 }
+  );
+  const roomKey = ROOM_DIGIT_MAP[roomDigit];
+
+  const dateDigit = await call.read([bookingFile(BOOKING_FILES.DATE_MENU)], "tap", {
     max_digits: 1,
     min_digits: 1,
     digits_allowed: [1, 2, 3, 4],
     sec_wait: 10,
   });
-  const roomKey = ROOM_DIGIT_MAP[roomDigit];
-
-  const dateDigit = await call.read(
-    [text("לתור היום הקישו 1. למחר הקישו 2. למחרתיים הקישו 3. לתאריך אחר הקישו 4")],
-    "tap",
-    { max_digits: 1, min_digits: 1, digits_allowed: [1, 2, 3, 4], sec_wait: 10 }
-  );
 
   let targetDate: Date;
   if (dateDigit === "4") {
     const { day, month } = await readValidated(
       call,
-      "הקישו את היום והחודש בארבע ספרות. לדוגמה, החמישי בספטמבר מוקלד 0509",
+      bookingFile(BOOKING_FILES.CUSTOM_DATE_PROMPT),
       parseDdMm,
-      "התאריך שהוקש אינו תקין",
-      4
+      bookingFile(BOOKING_FILES.INVALID_DATE),
+      4,
+      bookingFile(BOOKING_FILES.NO_INPUT)
     );
     targetDate = resolveTargetDate(day, month);
   } else {
@@ -161,13 +170,14 @@ async function runBookingDialog(call: Call, user: { id: string; name: string }, 
 
   const { hour, minute } = await readValidated(
     call,
-    "הקישו את שעת ההתחלה בארבע ספרות. לדוגמה, השעה 14:30 מוקלדת 1430",
+    bookingFile(BOOKING_FILES.TIME_PROMPT),
     parseHhMm,
-    "השעה שהוקשה אינה תקינה",
-    4
+    bookingFile(BOOKING_FILES.INVALID_TIME),
+    4,
+    bookingFile(BOOKING_FILES.NO_INPUT)
   );
 
-  const durationDigit = await call.read([text(DURATION_MENU_PROMPT)], "tap", {
+  const durationDigit = await call.read([bookingFile(BOOKING_FILES.DURATION_MENU)], "tap", {
     max_digits: 1,
     min_digits: 1,
     digits_allowed: [1, 2, 3, 4, 5, 6, 7],
@@ -183,27 +193,29 @@ async function runBookingDialog(call: Call, user: { id: string; name: string }, 
     minute
   );
   const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-  const durationLabel = DURATION_OPTIONS.find((o) => o.minutes === durationMinutes)?.label ?? "";
 
+  // הודעת אישור זו נכשלה שוב ושוב כשהורכבה משרשור ארוך של 12 קטעי קול נפרדים (קבצים+טקסט מתחלפים).
+  // חוזרים לתבנית היחידה שהוכחה כעובדת בפועל בקו האמיתי: משפט TTS אחד + קובץ מוקלט אחד (בדיוק כמו הברכה).
+  const roomLabel = ROOM_LABELS[roomKey];
+  const durationLabel = DURATION_OPTIONS.find((o) => o.minutes === durationMinutes)?.label ?? "";
   const confirmDigit = await call.read(
     [
       text(
-        `נקבע תור ל${ROOM_LABELS[roomKey]}, בתאריך ${String(startTime.getDate()).padStart(2, "0")} ל${String(
-          startTime.getMonth() + 1
-        ).padStart(2, "0")}, בשעה ${String(hour).padStart(2, "0")} ${String(minute).padStart(
-          2,
-          "0"
-        )}, למשך ${durationLabel}. לאישור הקישו 1. לביטול הקישו 2`
+        `נקבע תור ל${roomLabel}, בתאריך ${startTime.getDate()} ל${startTime.getMonth() + 1}, בשעה ${hour} ${minute}, למשך ${durationLabel}`
       ),
+      bookingFile(BOOKING_FILES.CONFIRM_SUFFIX),
     ],
     "tap",
     { max_digits: 1, min_digits: 1, digits_allowed: [1, 2], sec_wait: 10 }
   );
 
   if (confirmDigit !== "1") {
-    return call.id_list_message([text("התור בוטל. תודה ולהתראות")]);
+    return call.id_list_message([bookingFile(BOOKING_FILES.CANCELLED)]);
   }
 
+  // חשוב: call.id_list_message זורק שגיאת יציאה פנימית בכוונה (ראו readValidated למעלה) -
+  // הוא לא יכול לשבת בתוך אותו try שתופס שגיאות אמיתיות מ-createAppointment, אחרת ה-catch
+  // "יתפוס" את היציאה הזו בטעות וישלח תגובה שנייה וסותרת (בפועל נשמע כ"שגיאה" מיד אחרי הצלחה)
   try {
     await createAppointment({
       userId: user.id,
@@ -212,11 +224,11 @@ async function runBookingDialog(call: Call, user: { id: string; name: string }, 
       endTime,
       source: "IVR",
     });
-    return call.id_list_message([text("התור נקבע בהצלחה. תודה ולהתראות")]);
   } catch (err) {
     const message = err instanceof BookingError ? err.message : "אירעה שגיאה בקביעת התור, נסו שוב מאוחר יותר";
     return call.id_list_message([text(message)]);
   }
+  return call.id_list_message([bookingFile(BOOKING_FILES.SUCCESS)]);
 }
 
 async function findUserByCallerPhone(call: Call) {
@@ -237,20 +249,17 @@ export async function handleMembersCall(call: Call) {
     // הגעה ישירה לשלוחה זו בלי לעבור דרך שלוחת הבדיקה (מקרה קצה) — מנתבים חזרה למסלול הנכון
     return call.go_to_folder(NOT_REGISTERED_EXTENSION);
   }
-  return runBookingDialog(call, user, `שלום ${user.name}. `);
+  return runBookingDialog(call, user);
 }
 
 /** שלוחה 2 — מספר לא רשום: הרשמה / הסבר על המערכת (שלוחה 3) / ניתוק */
 export async function handleNotRegisteredCall(call: Call) {
-  const choice = await call.read(
-    [
-      text(
-        "מספר הטלפון שלך אינו רשום במערכת. להרשמה הקישו 1. לשמיעת הסבר על המערכת הקישו 2. לניתוק הקישו 3"
-      ),
-    ],
-    "tap",
-    { max_digits: 1, min_digits: 1, digits_allowed: [1, 2, 3], sec_wait: 10 }
-  );
+  const choice = await call.read([notRegisteredFile(NOT_REGISTERED_FILES.MAIN_MENU)], "tap", {
+    max_digits: 1,
+    min_digits: 1,
+    digits_allowed: [1, 2, 3],
+    sec_wait: 10,
+  });
 
   if (choice === "2") return call.go_to_folder(EXPLANATION_EXTENSION);
   if (choice !== "1") return call.hangup();
