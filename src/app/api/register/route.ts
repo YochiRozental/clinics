@@ -7,7 +7,7 @@ const registerSchema = z.object({
   name: z.string().trim().min(2, "יש להזין שם מלא"),
   email: z.string().trim().email("כתובת אימייל לא תקינה"),
   phone: z.string().trim().min(9, "מספר טלפון לא תקין").optional().or(z.literal("")),
-  password: z.string().min(8, "הסיסמה חייבת להכיל לפחות 8 תווים"),
+  password: z.string().min(4, "הסיסמה חייבת להכיל לפחות 4 תווים"),
 });
 
 export async function POST(request: Request) {

@@ -85,12 +85,12 @@ export default function RegisterPage() {
           <input
             required
             type="password"
-            minLength={8}
+            minLength={4}
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
-          <p className="text-xs text-slate-400 mt-1">לפחות 8 תווים</p>
+          <p className="text-xs text-slate-400 mt-1">לפחות 4 תווים</p>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
