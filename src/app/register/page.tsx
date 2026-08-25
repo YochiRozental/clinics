@@ -41,7 +41,7 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/booking");
+      router.push("/account-status");
       router.refresh();
     } catch {
       setError("שגיאה בלתי צפויה, נסה שוב");

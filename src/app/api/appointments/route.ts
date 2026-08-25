@@ -24,6 +24,9 @@ export async function POST(request: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "יש להתחבר כדי לקבוע תור" }, { status: 401 });
   }
+  if (session.user.status !== "APPROVED") {
+    return NextResponse.json({ error: "החשבון שלך טרם אושר לקביעת תורים" }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   const roomKey = body?.roomKey as RoomKey | undefined;

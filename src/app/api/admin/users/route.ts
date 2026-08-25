@@ -25,6 +25,7 @@ export async function GET(request: Request) {
       email: true,
       phone: true,
       role: true,
+      status: true,
       createdAt: true,
       _count: { select: { appointments: true } },
     },

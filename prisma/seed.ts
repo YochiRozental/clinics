@@ -28,6 +28,7 @@ async function main() {
       email: adminEmail,
       passwordHash,
       role: "ADMIN",
+      status: "APPROVED",
     },
   });
 

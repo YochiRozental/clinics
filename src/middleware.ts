@@ -15,10 +15,15 @@ export default auth((req) => {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith("/booking") && !isLoggedIn) {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(url);
+  if (pathname.startsWith("/booking")) {
+    if (!isLoggedIn) {
+      const url = new URL("/login", req.url);
+      url.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(url);
+    }
+    if (req.auth?.user?.status !== "APPROVED") {
+      return NextResponse.redirect(new URL("/account-status", req.url));
+    }
   }
 
   return NextResponse.next();

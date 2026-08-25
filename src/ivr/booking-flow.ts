@@ -121,18 +121,22 @@ async function readNewPin(call: Call): Promise<string> {
   throw new Error("unreachable");
 }
 
-/** קולט שם + קוד סודי ויוצר משתמש חדש. מניח שהמתקשר כבר ביקש להירשם (הכוונה נעשית לפני הקריאה לכאן) */
+/**
+ * קולט שם + קוד סודי ויוצר משתמש חדש (בסטטוס PENDING - ממתין לאישור מנהל, כברירת המחדל בסכימה).
+ * מניח שהמתקשר כבר ביקש להירשם (הכוונה נעשית לפני הקריאה לכאן).
+ * מודיע למתקשר שההרשמה ממתינה לאישור ומנתק - לא ממשיכים ישירות לקביעת תור.
+ */
 async function performRegistration(call: Call, phone: string) {
   const name = await readSpokenName(call);
   const pin = await readNewPin(call);
   const passwordHash = await hashPassword(pin);
 
   try {
-    return await prisma.user.create({ data: { name, phone, passwordHash } });
+    await prisma.user.create({ data: { name, phone, passwordHash } });
   } catch {
-    call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.REGISTRATION_ERROR)]);
-    return null;
+    return call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.REGISTRATION_ERROR)]);
   }
+  return call.id_list_message([notRegisteredFile(NOT_REGISTERED_FILES.REGISTRATION_PENDING)]);
 }
 
 async function runBookingDialog(call: Call, user: { id: string; name: string }) {
@@ -242,12 +246,21 @@ export async function handleCheckCall(call: Call) {
   return call.go_to_folder(user ? MEMBERS_EXTENSION : NOT_REGISTERED_EXTENSION);
 }
 
-/** שלוחה 1 — "מחוברים": מניחה שהמתקשר רשום (הגיע דרך שלוחת הבדיקה), ומריצה את שיחת קביעת התור */
+/**
+ * שלוחה 1 — "מחוברים": מניחה שהמתקשר רשום (הגיע דרך שלוחת הבדיקה), ומריצה את שיחת קביעת התור.
+ * לפני כן בודקת שהחשבון מאושר - משתמש שממתין לאישור או חסום שומע הודעה מתאימה ומנותק, בלי לקבוע תור.
+ */
 export async function handleMembersCall(call: Call) {
   const user = await findUserByCallerPhone(call);
   if (!user) {
     // הגעה ישירה לשלוחה זו בלי לעבור דרך שלוחת הבדיקה (מקרה קצה) — מנתבים חזרה למסלול הנכון
     return call.go_to_folder(NOT_REGISTERED_EXTENSION);
+  }
+  if (user.status === "PENDING") {
+    return call.id_list_message([bookingFile(BOOKING_FILES.PENDING_APPROVAL)]);
+  }
+  if (user.status === "BLOCKED") {
+    return call.id_list_message([bookingFile(BOOKING_FILES.BLOCKED)]);
   }
   return runBookingDialog(call, user);
 }
@@ -264,8 +277,6 @@ export async function handleNotRegisteredCall(call: Call) {
   if (choice === "2") return call.go_to_folder(EXPLANATION_EXTENSION);
   if (choice !== "1") return call.hangup();
 
-  const newUser = await performRegistration(call, call.phone);
-  if (!newUser) return; // performRegistration כבר סיימה את השיחה עם הודעת שגיאה
-
-  return call.go_to_folder(MEMBERS_EXTENSION);
+  // performRegistration מסיימת את השיחה בעצמה (הודעת המתנה לאישור, או שגיאה) - לא ממשיכים לקביעת תור
+  return performRegistration(call, call.phone);
 }

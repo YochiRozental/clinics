@@ -9,8 +9,21 @@ type UserRow = {
   email: string | null;
   phone: string | null;
   role: "CLIENT" | "ADMIN";
+  status: "PENDING" | "APPROVED" | "BLOCKED";
   createdAt: string;
   _count: { appointments: number };
+};
+
+const STATUS_LABELS: Record<UserRow["status"], string> = {
+  PENDING: "ממתין לאישור",
+  APPROVED: "מאושר",
+  BLOCKED: "חסום",
+};
+
+const STATUS_CLASSES: Record<UserRow["status"], string> = {
+  PENDING: "bg-amber-50 text-amber-700",
+  APPROVED: "bg-emerald-50 text-emerald-700",
+  BLOCKED: "bg-red-50 text-red-700",
 };
 
 export default function AdminUsersPage() {
@@ -44,6 +57,17 @@ export default function AdminUsersPage() {
     load();
   }
 
+  async function setStatus(user: UserRow, status: UserRow["status"]) {
+    setSavingId(user.id);
+    await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setSavingId(null);
+    load();
+  }
+
   return (
     <div className="space-y-4">
       <input
@@ -65,6 +89,8 @@ export default function AdminUsersPage() {
                 <th className="px-4 py-2 font-medium">טלפון</th>
                 <th className="px-4 py-2 font-medium">תורים</th>
                 <th className="px-4 py-2 font-medium">תפקיד</th>
+                <th className="px-4 py-2 font-medium">סטטוס</th>
+                <th className="px-4 py-2"></th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -83,6 +109,49 @@ export default function AdminUsersPage() {
                     >
                       {u.role === "ADMIN" ? "מנהל" : "לקוח"}
                     </span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs px-2 py-1 rounded-full ${STATUS_CLASSES[u.status]}`}>
+                      {STATUS_LABELS[u.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {u.status === "PENDING" && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setStatus(u, "APPROVED")}
+                          disabled={savingId === u.id}
+                          className="text-xs text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                        >
+                          אישור
+                        </button>
+                        <button
+                          onClick={() => setStatus(u, "BLOCKED")}
+                          disabled={savingId === u.id || u.id === session?.user?.id}
+                          className="text-xs text-red-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                        >
+                          חסימה
+                        </button>
+                      </div>
+                    )}
+                    {u.status === "APPROVED" && (
+                      <button
+                        onClick={() => setStatus(u, "BLOCKED")}
+                        disabled={savingId === u.id || u.id === session?.user?.id}
+                        className="text-xs text-red-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                      >
+                        חסימה
+                      </button>
+                    )}
+                    {u.status === "BLOCKED" && (
+                      <button
+                        onClick={() => setStatus(u, "APPROVED")}
+                        disabled={savingId === u.id}
+                        className="text-xs text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                      >
+                        ביטול חסימה
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     <button

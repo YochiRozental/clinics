@@ -15,6 +15,7 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.id = user.id as string;
         token.role = (user as { role: string }).role;
+        token.status = (user as { status: "PENDING" | "APPROVED" | "BLOCKED" }).status;
       }
       return token;
     },
@@ -22,6 +23,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as "CLIENT" | "ADMIN";
+        session.user.status = token.status as "PENDING" | "APPROVED" | "BLOCKED";
       }
       return session;
     },

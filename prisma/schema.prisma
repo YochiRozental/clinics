@@ -15,6 +15,12 @@ enum Role {
   ADMIN
 }
 
+enum UserStatus {
+  PENDING
+  APPROVED
+  BLOCKED
+}
+
 enum RoomKey {
   ROOM1
   ROOM2
@@ -40,6 +46,7 @@ model User {
   phone        String?       @unique
   passwordHash String
   role         Role          @default(CLIENT)
+  status       UserStatus    @default(PENDING)
   appointments Appointment[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
