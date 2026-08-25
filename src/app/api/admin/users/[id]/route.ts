@@ -50,3 +50,24 @@ export async function PATCH(
 
   return NextResponse.json(user);
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+
+  const { id } = await params;
+
+  if (id === session.user.id) {
+    return NextResponse.json({ error: "לא ניתן למחוק את החשבון של עצמך" }, { status: 400 });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  if (!existing) return NextResponse.json({ error: "משתמש לא נמצא" }, { status: 404 });
+
+  await prisma.user.delete({ where: { id } });
+
+  return NextResponse.json({ ok: true });
+}

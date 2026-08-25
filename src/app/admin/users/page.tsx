@@ -45,18 +45,6 @@ export default function AdminUsersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  async function toggleRole(user: UserRow) {
-    setSavingId(user.id);
-    const newRole = user.role === "ADMIN" ? "CLIENT" : "ADMIN";
-    await fetch(`/api/admin/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: newRole }),
-    });
-    setSavingId(null);
-    load();
-  }
-
   async function setStatus(user: UserRow, status: UserRow["status"]) {
     setSavingId(user.id);
     await fetch(`/api/admin/users/${user.id}`, {
@@ -65,6 +53,24 @@ export default function AdminUsersPage() {
       body: JSON.stringify({ status }),
     });
     setSavingId(null);
+    load();
+  }
+
+  async function deleteUser(user: UserRow) {
+    const warning =
+      user._count.appointments > 0
+        ? `למחוק את ${user.name}? יימחקו גם ${user._count.appointments} התורים שלו/שלה. פעולה זו בלתי הפיכה.`
+        : `למחוק את ${user.name}? פעולה זו בלתי הפיכה.`;
+    if (!confirm(warning)) return;
+
+    setSavingId(user.id);
+    const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+    setSavingId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      alert(data?.error ?? "שגיאה במחיקת המשתמש");
+      return;
+    }
     load();
   }
 
@@ -155,11 +161,11 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-4 py-2">
                     <button
-                      onClick={() => toggleRole(u)}
+                      onClick={() => deleteUser(u)}
                       disabled={savingId === u.id || u.id === session?.user?.id}
-                      className="text-xs text-teal-700 hover:underline disabled:opacity-40 disabled:no-underline"
+                      className="text-xs text-red-700 hover:underline disabled:opacity-40 disabled:no-underline"
                     >
-                      {u.role === "ADMIN" ? "הסרת הרשאת מנהל" : "הפיכה למנהל"}
+                      מחיקה
                     </button>
                   </td>
                 </tr>
