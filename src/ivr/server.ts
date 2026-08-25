@@ -48,7 +48,7 @@ const port = Number(process.env.IVR_PORT) || 3001;
 app.listen(port, () => {
   console.log(`[ivr] Yemot IVR server listening on port ${port}`);
   console.log(`[ivr] שלוחת הבדיקה (הכניסה לשיחה) -> http://<your-domain>:${port}${checkPath}`);
-  console.log(`[ivr] שלוחה 1, "מחוברים" -> http://<your-domain>:${port}${membersPath}`);
-  console.log(`[ivr] שלוחה 2, "לא רשום" -> http://<your-domain>:${port}${notRegisteredPath}`);
-  console.log(`[ivr] שלוחה 3, "הסבר על המערכת" -> קיימת כבר בפאנל, אין צורך ב-URL`);
+  console.log(`[ivr] שלוחה 9/1, "מחוברים" -> http://<your-domain>:${port}${membersPath}`);
+  console.log(`[ivr] שלוחה 9/2, "לא רשום" -> http://<your-domain>:${port}${notRegisteredPath}`);
+  console.log(`[ivr] שלוחה 9/3, "הסבר על המערכת" -> קיימת כבר בפאנל, אין צורך ב-URL`);
 });

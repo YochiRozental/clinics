@@ -78,9 +78,9 @@ function parsePin(raw: string): string | null {
  * שלוחות יעד ל-go_to_folder, לפי מבנה השלוחות שהוגדר בפאנל ימות המשיח.
  * נתיבים מוחלטים (מתחילים ב-/) כדי שהניווט יעבוד מכל עומק בעץ השלוחות.
  */
-const MEMBERS_EXTENSION = "/1";
-const NOT_REGISTERED_EXTENSION = "/2";
-const EXPLANATION_EXTENSION = "/3";
+const MEMBERS_EXTENSION = "/9/1";
+const NOT_REGISTERED_EXTENSION = "/9/2";
+const EXPLANATION_EXTENSION = "/9/3";
 
 /** מבקש מהמתקשר שם מלא באמצעות זיהוי דיבור, עם ניסיונות חוזרים */
 async function readSpokenName(call: Call): Promise<string> {
@@ -240,14 +240,14 @@ async function findUserByCallerPhone(call: Call) {
   return phone ? prisma.user.findFirst({ where: { phone: { endsWith: phone } } }) : null;
 }
 
-/** שלוחת הבדיקה — הכניסה הראשונית לשיחה. בודקת אם המספר רשום ומנתבת לשלוחת המחוברים (1) או ללא-רשומים (2) */
+/** שלוחת הבדיקה — הכניסה הראשונית לשיחה. בודקת אם המספר רשום ומנתבת לשלוחת המחוברים (9/1) או ללא-רשומים (9/2) */
 export async function handleCheckCall(call: Call) {
   const user = await findUserByCallerPhone(call);
   return call.go_to_folder(user ? MEMBERS_EXTENSION : NOT_REGISTERED_EXTENSION);
 }
 
 /**
- * שלוחה 1 — "מחוברים": מניחה שהמתקשר רשום (הגיע דרך שלוחת הבדיקה), ומריצה את שיחת קביעת התור.
+ * שלוחה 9/1 — "מחוברים": מניחה שהמתקשר רשום (הגיע דרך שלוחת הבדיקה), ומריצה את שיחת קביעת התור.
  * לפני כן בודקת שהחשבון מאושר - משתמש שממתין לאישור או חסום שומע הודעה מתאימה ומנותק, בלי לקבוע תור.
  */
 export async function handleMembersCall(call: Call) {
@@ -265,7 +265,7 @@ export async function handleMembersCall(call: Call) {
   return runBookingDialog(call, user);
 }
 
-/** שלוחה 2 — מספר לא רשום: הרשמה / הסבר על המערכת (שלוחה 3) / ניתוק */
+/** שלוחה 9/2 — מספר לא רשום: הרשמה / הסבר על המערכת (שלוחה 9/3) / ניתוק */
 export async function handleNotRegisteredCall(call: Call) {
   const choice = await call.read([notRegisteredFile(NOT_REGISTERED_FILES.MAIN_MENU)], "tap", {
     max_digits: 1,
