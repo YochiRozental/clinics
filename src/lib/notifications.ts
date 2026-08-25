@@ -35,11 +35,17 @@ async function sendApprovalEmail(email: string, name: string) {
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
 
+  const text = `שלום ${name},\n\nהחשבון שלך במערכת קביעת התורים אושר על ידי מנהל המערכת.\nניתן כעת להתחבר ולקבוע תורים בקליניקות.\n\nאם היית מחובר/ת בעת האישור, יש להתנתק ולהתחבר מחדש כדי שהאישור ייכנס לתוקף.`;
+
   await transport.sendMail({
     from: SMTP_FROM,
     to: email,
     subject: "החשבון שלך אושר - ניתן לקבוע תורים",
-    text: `שלום ${name},\n\nהחשבון שלך במערכת קביעת התורים אושר על ידי מנהל המערכת.\nניתן כעת להתחבר ולקבוע תורים בקליניקות.\n\nאם היית מחובר/ת בעת האישור, יש להתנתק ולהתחבר מחדש כדי שהאישור ייכנס לתוקף.`,
+    text,
+    html: `<div dir="rtl" style="text-align: right; font-family: Arial, sans-serif;">${text
+      .split("\n")
+      .map((line) => (line ? `<p style="margin: 0 0 12px;">${line}</p>` : ""))
+      .join("")}</div>`,
   });
 }
 
