@@ -21,7 +21,8 @@ const router = YemotRouter({
 });
 
 router.events.on("new_call", (call) => {
-  console.log(`[ivr] new call ${call.callId} from ${call.phone}`);
+  // DEBUG TEMP - חותמת זמן לאבחון עיכוב תגובה אפשרי אחרי מעבר ל-Render, להסרה בסיום האבחון
+  console.log(`[ivr] new call ${call.callId} from ${call.phone} extension=${call.extension} t=${new Date().toISOString()}`);
 });
 router.events.on("call_hangup", (call) => {
   console.log(`[ivr] call ${call.callId} hung up`);

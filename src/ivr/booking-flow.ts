@@ -242,8 +242,13 @@ async function findUserByCallerPhone(call: Call) {
 
 /** שלוחת הבדיקה — הכניסה הראשונית לשיחה. בודקת אם המספר רשום ומנתבת לשלוחת המחוברים (9/1) או ללא-רשומים (9/2) */
 export async function handleCheckCall(call: Call) {
+  // DEBUG TEMP - לוגים זמניים לאבחון בעיית go_to_folder אחרי מעבר ל-Render, להסרה בסיום האבחון
+  console.log(`[ivr][DEBUG] handleCheckCall START callId=${call.callId} phone=${call.phone} extension=${call.extension} t=${new Date().toISOString()}`);
   const user = await findUserByCallerPhone(call);
-  return call.go_to_folder(user ? MEMBERS_EXTENSION : NOT_REGISTERED_EXTENSION);
+  console.log(`[ivr][DEBUG] findUserByCallerPhone DONE callId=${call.callId} normalizedPhone=${last9Digits(call.phone)} userFound=${!!user} userId=${user?.id ?? "null"} t=${new Date().toISOString()}`);
+  const target = user ? MEMBERS_EXTENSION : NOT_REGISTERED_EXTENSION;
+  console.log(`[ivr][DEBUG] handleCheckCall go_to_folder -> ${target} callId=${call.callId} t=${new Date().toISOString()}`);
+  return call.go_to_folder(target);
 }
 
 /**
