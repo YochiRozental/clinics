@@ -44,7 +44,10 @@ router.get(notRegisteredPath, handleNotRegisteredCall);
 app.use(express.urlencoded({ extended: true }));
 app.use(router.asExpressRouter);
 
-const port = Number(process.env.IVR_PORT) || 3001;
+const port =
+  Number(process.env.PORT) ||
+  Number(process.env.IVR_PORT) ||
+  3001;
 app.listen(port, () => {
   console.log(`[ivr] Yemot IVR server listening on port ${port}`);
   console.log(`[ivr] שלוחת הבדיקה (הכניסה לשיחה) -> http://<your-domain>:${port}${checkPath}`);
